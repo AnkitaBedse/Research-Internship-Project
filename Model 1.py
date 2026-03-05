@@ -1,3 +1,10 @@
+"""
+Model 1: Stylistic Analysis module
+Provides reasoning and confidence, NOT final predictions
+Outputs structured decisions for Coordinator-led debate
+"""
+
+# Install required packages
 !pip install textstat
 
 import pandas as pd
@@ -12,9 +19,12 @@ import textstat
 from tqdm import tqdm
 
 print("=" * 60)
-print("AGENT 1: STYLISTIC ANALYSIS AGENT (AGENTIC)")
+print("Model 1: STYLISTIC ANALYSIS Module")
 print("=" * 60)
 
+# ============================================================================
+# Load Cleaned data splits
+# ============================================================================
 print("\n📥 LOADING CLEANED DATA SPLITS...")
 print("="*70)
 
@@ -41,12 +51,20 @@ print(train_df['label'].value_counts())
 
 os.makedirs('/content/models', exist_ok=True)
 
+# ============================================================================
+# Enhanced Feature Extraction Functions
+# ============================================================================
 print("\n[2/6] Defining enhanced feature extraction functions...")
 
 def extract_enhanced_stylistic_features(text):
+    """
+    Model 1: PURE STYLISTIC FEATURES ONLY
+    Extracts stylistic features for fake news detection
+    """
     features = {}
     words = text.split()
 
+    # === 1. SENSATIONALISM FEATURES ===
     features['exclamation_count'] = text.count('!')
     features['exclamation_density'] = text.count('!') / max(len(text), 1) * 1000
     features['question_count'] = text.count('?')
@@ -87,6 +105,7 @@ def extract_enhanced_stylistic_features(text):
                      'good', 'best', 'perfect']
     features['positive_emotion_count'] = sum(text.lower().count(word) for word in positive_words)
 
+    # === 2. READABILITY FEATURES ===
     try:
         features['flesch_reading_ease'] = textstat.flesch_reading_ease(text)
     except:
@@ -108,6 +127,7 @@ def extract_enhanced_stylistic_features(text):
     sent_lengths = [len(s.split()) for s in sentences]
     features['sentence_length_std'] = np.std(sent_lengths) if len(sent_lengths) > 1 else 0
 
+    # === 3. PUNCTUATION PATTERNS ===
     features['multiple_punct'] = len(re.findall(r'[!?]{2,}', text))
     features['quote_count'] = text.count('"') + text.count("'")
     features['ellipsis_count'] = text.count('...')
@@ -115,6 +135,7 @@ def extract_enhanced_stylistic_features(text):
     features['dash_count'] = text.count('—') + text.count('--') + text.count(' - ')
     features['punct_variety'] = len(set(re.findall(r'[^\w\s]', text)))
 
+    # === 4. WRITING STYLE FEATURES ===
     features['avg_word_length'] = np.mean([len(w) for w in words]) if words else 0
     features['number_density'] = len(re.findall(r'\d+', text)) / max(len(words), 1)
     features['long_word_ratio'] = len([w for w in words if len(w) > 10]) / max(len(words), 1)
@@ -136,6 +157,9 @@ sample_text = train_df['cleaned_text'].iloc[0]
 sample_features = extract_enhanced_stylistic_features(sample_text)
 print(f"✓ Extracted {len(sample_features)} features")
 
+# ============================================================================
+# Extract Features for All Data
+# ============================================================================
 print("\n[3/6] Extracting features from all articles...")
 
 def extract_features_from_df(df):
@@ -157,6 +181,9 @@ train_labels = train_df['label'].values
 val_labels = val_df['label'].values
 test_labels = test_df['label'].values
 
+# ============================================================================
+# Train XGBoost Model (for confidence scoring only)
+# ============================================================================
 print("\n[4/6] Training XGBoost for confidence scoring...")
 
 model = xgb.XGBClassifier(
@@ -178,9 +205,16 @@ model.fit(train_features, train_labels, eval_set=eval_set, verbose=20)
 
 print("✓ Training complete!")
 
+# ============================================================================
+# Generate Reasoning-Based Outputs 
+# ============================================================================
 print("\n[5/6] Generating reasoning-based decisions for Coordinator...")
 
-def generate_agent_reasoning(features_df, probabilities, predictions, feature_names):
+def generate_model_reasoning(features_df, probabilities, predictions, feature_names):
+    """
+    Generate structured reasoning for each decision
+    Format: {"decision": "FAKE/REAL", "confidence": 0.XX, "reasoning": {...}}
+    """
     decisions = []
 
     for idx in range(len(predictions)):
@@ -188,8 +222,10 @@ def generate_agent_reasoning(features_df, probabilities, predictions, feature_na
         pred = predictions[idx]
         features = features_df.iloc[idx]
 
+        # Build reasoning from top contributing features
         feature_contributions = {}
 
+        # Key stylistic indicators
         if features['exclamation_density'] > 2.0:
             feature_contributions['high_exclamation'] = f"High exclamation density ({features['exclamation_density']:.2f})"
 
@@ -208,6 +244,7 @@ def generate_agent_reasoning(features_df, probabilities, predictions, feature_na
         if features['multiple_punct'] > 0:
             feature_contributions['multiple_punctuation'] = f"Multiple punctuation marks ({features['multiple_punct']})"
 
+        # Decision structure
         decision = {
             'decision': 'REAL' if pred == 1 else 'FAKE',
             'confidence': float(proba if pred == 1 else 1 - proba),
@@ -230,6 +267,7 @@ def generate_agent_reasoning(features_df, probabilities, predictions, feature_na
 
     return decisions
 
+# Generate decisions for all splits
 train_proba = model.predict_proba(train_features)[:, 1]
 val_proba = model.predict_proba(val_features)[:, 1]
 test_proba = model.predict_proba(test_features)[:, 1]
@@ -238,17 +276,20 @@ train_pred = model.predict(train_features)
 val_pred = model.predict(val_features)
 test_pred = model.predict(test_features)
 
-train_decisions = generate_agent_reasoning(train_features, train_proba, train_pred, train_features.columns)
-val_decisions = generate_agent_reasoning(val_features, val_proba, val_pred, val_features.columns)
-test_decisions = generate_agent_reasoning(test_features, test_proba, test_pred, test_features.columns)
+train_decisions = generate_model_reasoning(train_features, train_proba, train_pred, train_features.columns)
+val_decisions = generate_model_reasoning(val_features, val_proba, val_pred, val_features.columns)
+test_decisions = generate_model_reasoning(test_features, test_proba, test_pred, test_features.columns)
 
-print("\n[6/6] Evaluating and saving agent outputs...")
+# ============================================================================
+# Evaluate and Save
+# ============================================================================
+print("\n[6/6] Evaluating and saving model outputs...")
 
 train_acc = accuracy_score(train_labels, train_pred)
 val_acc = accuracy_score(val_labels, val_pred)
 test_acc = accuracy_score(test_labels, test_pred)
 
-print(f"\n📊 Agent 1 Performance (for reference only):")
+print(f"\n📊modle 1 Performance (for reference only):")
 print(f"  Train Accuracy: {train_acc*100:.2f}%")
 print(f"  Val Accuracy:   {val_acc*100:.2f}%")
 print(f"  Test Accuracy:  {test_acc*100:.2f}%")
@@ -256,15 +297,19 @@ print(f"  Test Accuracy:  {test_acc*100:.2f}%")
 print(f"\n📋 Detailed Test Results:")
 print(classification_report(test_labels, test_pred, target_names=['Fake', 'Real']))
 
+# Feature importance
+print(f"\n🔍 Top 10 Most Important Features:")
 feature_importance = pd.DataFrame({
     'feature': train_features.columns,
     'importance': model.feature_importances_
 }).sort_values('importance', ascending=False)
 print(feature_importance.head(10).to_string(index=False))
 
-with open('/content/models/agent1_model.pkl', 'wb') as f:
+# Save model
+with open('/content/models/model1_model.pkl', 'wb') as f:
     pickle.dump(model, f)
 
+# Save Model outputs for Coordinator
 agent1_outputs = {
     'train': {
         'decisions': train_decisions,
@@ -289,30 +334,23 @@ agent1_outputs = {
     }
 }
 
-with open('/content/models/agent1_outputs.pkl', 'wb') as f:
-    pickle.dump(agent1_outputs, f)
+with open('/content/models/model1_outputs.pkl', 'wb') as f:
+    pickle.dump(model1_outputs, f)
 
-print("\n✓ Model saved to '/content/models/agent1_model.pkl'")
-print("✓ Agentic outputs saved to '/content/models/agent1_outputs.pkl'")
+print("\n✓ Model saved to '/content/models/model1_model.pkl'")
+print("✓ model outputs saved to '/content/models/model1_outputs.pkl'")
 
+# Display sample reasoning
 print("\n" + "="*70)
-print("📝 SAMPLE AGENT 1 REASONING (First 3 test samples):")
+print("📝 SAMPLE model 1 REASONING (First 3 test samples):")
 print("="*70)
 for i in range(min(3, len(test_decisions))):
     dec = test_decisions[i]
     actual = "REAL" if test_labels[i] == 1 else "FAKE"
     print(f"\nSample {i+1}:")
-    print(f"  Agent Decision: {dec['decision']} (Confidence: {dec['confidence']:.2%})")
+    print(f"  model Decision: {dec['decision']} (Confidence: {dec['confidence']:.2%})")
     print(f"  Actual Label: {actual}")
     print(f"  Reasoning: {dec['reasoning']['reasoning_text']}")
     print(f"  Key Factors: {list(dec['reasoning']['primary_factors'].keys())}")
 
-print("\n" + "=" * 60)
-print("✅ AGENT 1 (AGENTIC) TRAINING COMPLETE!")
-print("=" * 60)
-print(f"\n📈 Summary:")
-print(f"  • Agent Type: Stylistic Analysis")
-print(f"  • Output Format: Structured decisions with reasoning")
-print(f"  • Total Features: {len(sample_features)}")
-print(f"  • Ready for Coordinator integration")
-print(f"  • Supports debate via detailed feature explanations")
+
